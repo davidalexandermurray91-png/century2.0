@@ -1,7 +1,8 @@
 # Publishes the game to GitHub Pages on every push.
 #
-# `enablement: true` asks GitHub to switch Pages on for this repository if it
-# isn't already, which saves doing it by hand in the repo settings.
+# Requires the repository's Pages source to be set to "GitHub Actions"
+# (Settings -> Pages -> Build and deployment -> Source). A workflow cannot turn
+# Pages on for itself: the run token is refused by the create-Pages-site API.
 name: Deploy to GitHub Pages
 
 on:
@@ -29,8 +30,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       # the whole repo is the site — no build step to run
       - uses: actions/upload-pages-artifact@v3
