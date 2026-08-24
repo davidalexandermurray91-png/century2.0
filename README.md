@@ -20,6 +20,17 @@ no dependencies. ES modules won't load over `file://`, so serve the folder:
 python3 -m http.server 8000     # then open http://localhost:8000
 ```
 
+To produce a single self-contained `.html` file (everything inlined, for
+dropping on any host or opening directly):
+
+```sh
+npx esbuild src/main.js --bundle --format=iife --charset=ascii --outfile=century.js
+```
+
+then inline that output and `style.css` into a copy of `index.html`. Nothing in
+the repository depends on this — it's only for when one file is easier to move
+around than fifteen.
+
 ### Controls
 
 | | |

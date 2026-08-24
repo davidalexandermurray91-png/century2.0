@@ -15,8 +15,11 @@ const bestEl = document.getElementById('bestrun');
 
 const BEST_KEY = 'century.best';
 const readBest = () => {
-  const n = Number(localStorage.getItem(BEST_KEY) || 0);
-  return Number.isFinite(n) ? n : 0;
+  // storage access itself throws in some contexts, not just the write
+  try {
+    const n = Number(localStorage.getItem(BEST_KEY) || 0);
+    return Number.isFinite(n) ? n : 0;
+  } catch { return 0; }
 };
 const writeBest = (n) => { try { localStorage.setItem(BEST_KEY, String(n)); } catch { /* private mode */ } };
 
