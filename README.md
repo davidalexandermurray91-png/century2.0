@@ -11,8 +11,10 @@ until one of them gets you.
 
 ## Playing it
 
-It's plain HTML, CSS and JavaScript modules — no build step, no dependencies.
-ES modules won't load over `file://`, so serve the folder:
+**<https://davidalexandermurray91-png.github.io/century2.0/>**
+
+To run it locally: it's plain HTML, CSS and JavaScript modules — no build step,
+no dependencies. ES modules won't load over `file://`, so serve the folder:
 
 ```sh
 python3 -m http.server 8000     # then open http://localhost:8000
