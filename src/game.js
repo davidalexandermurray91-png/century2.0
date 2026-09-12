@@ -2,7 +2,7 @@ import {
   TILE, VIEW_W, VIEW_H,
   dayLength, nightLength, DUSK_SECONDS, GRACE_NIGHTS, NIGHTS_IN_CENTURY,
   WEAPONS, WEAPON_ORDER, RECIPES, BUILDINGS, VEHICLE_PARTS, VEHICLE, FLARE,
-  B_BENCH,
+  B_BENCH, GUNPOWDER_WINDOW, GUNPOWDER_PER_DOUBLE, DROPS, ARMOUR, RESOURCES,
   M_GHOST, M_VAMPIRE, M_ZOMBIE, waveFor,
 } from './config.js';
 import { World, toCell, tileCentre, idx } from './world.js';
@@ -12,6 +12,7 @@ import { Projectile, GroundPizza, Beam, Particle, Floater } from './projectiles.
 import { Vehicle } from './vehicle.js';
 import { held, pressed, freshestIntent, endFrame, mouse } from './input.js';
 import { sfx, toggleAudio } from './audio.js';
+import { bankRun } from './profile.js';
 import { clamp, dist } from './utils.js';
 import * as R from './render.js';
 import { drawHud, drawCodex } from './hud.js';
@@ -20,8 +21,9 @@ const AMBIENT_DAY = 0.94;
 const AMBIENT_NIGHT = 0.09;
 
 export class Game {
-  constructor(onGameOver) {
+  constructor(onGameOver, profile = null) {
     this.onGameOver = onGameOver;
+    this.profile = profile;
     this.reset();
   }
 
@@ -64,6 +66,9 @@ export class Game {
     this.bannerSub = '';
     this.bannerColour = '#fff';
     this.seenMonster = new Set();
+    // when each of the two lighter monsters last died, for the powder rule
+    this.lastKillAt = { [M_GHOST]: -99, [M_VAMPIRE]: -99 };
+    this.banked = false;
 
     this.banner('DAY ONE', 'Five quiet nights. Use them.', '#ffb454', 2.6);
     this.toast('Walk over the dots to gather. [Tab] to craft, [B] to build.', '#38e1ff', 6);
@@ -137,10 +142,46 @@ export class Game {
     this.spark(m.x, m.y, m.def.colour, 18);
     this.shake(m.type === M_ZOMBIE ? 8 : 3);
     sfx.kill();
-    const drop = { [M_GHOST]: 'crystal', [M_VAMPIRE]: 'fuel', [M_ZOMBIE]: 'iron' }[m.type];
-    const n = m.type === M_ZOMBIE ? 4 : 2;
-    this.player.give(drop, n);
-    this.floater(m.x, m.y, `+${n} ${drop}`, m.def.colour);
+    let row = 0;
+    for (const drop of DROPS[m.type] || []) {
+      if (drop.chance !== undefined && Math.random() > drop.chance) continue;
+      this.player.give(drop.res, drop.n);
+      const rare = drop.chance !== undefined;
+      this.floater(m.x, m.y - row * 12, `+${drop.n} ${RESOURCES[drop.res].label}`,
+        rare ? '#ffe27a' : RESOURCES[drop.res].colour);
+      row++;
+      if (rare) {
+        this.toast(`Iron plating! Take it to a bench for the best armour there is.`, '#ffe27a', 6);
+        this.spark(m.x, m.y, '#ffe27a', 20);
+        sfx.craft();
+      }
+    }
+    this.checkDoubleKill(m);
+  }
+
+  /**
+   * Gunpowder has exactly one source: a ghost and a vampire going out within
+   * a couple of seconds of each other. Both deaths are consumed by the payout,
+   * so you can't hold one ghost kill open and cash it against a row of
+   * vampires — every charge costs you a fresh pair.
+   */
+  checkDoubleKill(m) {
+    if (m.type !== M_GHOST && m.type !== M_VAMPIRE) return;
+    this.lastKillAt[m.type] = this.time;
+    const other = m.type === M_GHOST ? M_VAMPIRE : M_GHOST;
+    if (this.time - this.lastKillAt[other] > GUNPOWDER_WINDOW) return;
+
+    this.lastKillAt[M_GHOST] = -99;
+    this.lastKillAt[M_VAMPIRE] = -99;
+    this.player.give('gunpowder', GUNPOWDER_PER_DOUBLE);
+    this.floater(m.x, m.y - 16, `+${GUNPOWDER_PER_DOUBLE} GUNPOWDER`, '#ffe27a');
+    this.spark(m.x, m.y, '#ffe27a', 16);
+    this.shake(5);
+    sfx.craft();
+    if (!this.seenPowder) {
+      this.seenPowder = true;
+      this.toast('Gunpowder! Only a ghost and a vampire dying together leave it.', '#ffe27a', 6);
+    }
   }
 
   // ---------------------------------------------------------------- loop ---
@@ -199,7 +240,7 @@ export class Game {
     p.moveIntent(freshestIntent());
 
     // weapon select
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= WEAPON_ORDER.length; i++) {
       if (pressed(`Digit${i}`)) {
         if (!p.selectSlot(i)) { sfx.deny(); this.toast(`You haven't made a ${WEAPONS[WEAPON_ORDER[i - 1]].name.toLowerCase()} yet`, '#ff4d6d', 1.6); }
       }
@@ -345,7 +386,7 @@ export class Game {
           m.attackCd = 0.55;
           sfx.hurt();
           this.shake(5);
-          this.floater(p.x, p.y, `-${m.def.touchDamage}`, '#ff4d6d');
+          this.floater(p.x, p.y, `-${p.lastHit ?? m.def.touchDamage}`, '#ff4d6d');
         }
       }
     }
@@ -604,6 +645,9 @@ export class Game {
     if (recipe.part && p.parts.has(recipe.part)) {
       sfx.deny(); this.toast('That part is already built', '#7c89ab', 1.4); return;
     }
+    if (recipe.armour && ARMOUR[recipe.armour].rank <= p.armourDef.rank) {
+      sfx.deny(); this.toast('You are already wearing better', '#7c89ab', 1.8); return;
+    }
     if (!p.canAfford(recipe.cost)) { sfx.deny(); this.toast('Not enough materials', '#ff4d6d', 1.6); return; }
 
     p.pay(recipe.cost);
@@ -619,6 +663,11 @@ export class Game {
       this.toast(`+${Object.entries(recipe.give).map(([k, v]) => `${v} ${k}`).join(', ')}`, '#5ef2a0', 1.8);
     }
     if (recipe.heal) { p.heal(recipe.heal); this.toast(`Patched up +${recipe.heal}`, '#5ef2a0', 1.6); }
+    if (recipe.armour) {
+      const def = ARMOUR[recipe.armour];
+      p.equipArmour(recipe.armour);
+      this.toast(`${def.label} armour on — ${Math.round(def.reduce * 100)}% off every hit, +${def.bonusHp} health`, '#5ef2a0', 4.5);
+    }
     if (recipe.id === 'pizzas') p.refuelTorch(0);
     if (recipe.part) {
       p.parts.add(recipe.part);
@@ -790,10 +839,21 @@ export class Game {
     return this.phase === 'day' ? [8, 10, 24] : [3, 4, 14];
   }
 
+  /** Fold this run's haul into the profile. Safe to call more than once. */
+  bank() {
+    if (this.banked || !this.profile) return null;
+    this.banked = true;
+    return bankRun(this.profile, this.player, {
+      night: this.night, centuries: this.centuries,
+    });
+  }
+
   die() {
     this.state = 'dead';
     sfx.death();
+    const gained = this.bank();
     this.onGameOver?.({
+      gained,
       night: this.night,
       kills: this.player.kills,
       gathered: this.player.gathered,

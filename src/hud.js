@@ -1,6 +1,6 @@
 import {
   VIEW_W, VIEW_H, WEAPONS, WEAPON_ORDER, RECIPES, RESOURCES, BUILDINGS,
-  NIGHTS_IN_CENTURY, VEHICLE_PARTS, PLAYER, VEHICLE,
+  NIGHTS_IN_CENTURY, VEHICLE_PARTS, PLAYER, VEHICLE, GATHERABLE,
 } from './config.js';
 import { BUILD_ORDER } from './player.js';
 import { clamp, commas } from './utils.js';
@@ -73,7 +73,10 @@ export function drawHud(ctx, game) {
   ctx.textAlign = 'left';
 
   // ---- resources rail ---------------------------------------------------
-  const keys = Object.keys(RESOURCES);
+  // The seven you can gather are always listed; the rarer drops only appear
+  // once you actually have some, so the rail stays short early on.
+  const keys = Object.keys(RESOURCES)
+    .filter((k) => GATHERABLE.includes(k) || (p.res[k] || 0) > 0);
   panel(ctx, 10, 66, 112, 14 + keys.length * 15);
   ctx.font = `600 11px ${FONT}`;
   keys.forEach((k, i) => {
@@ -104,6 +107,13 @@ export function drawHud(ctx, game) {
   ctx.font = `700 10px ${FONT}`;
   ctx.fillText('TORCH', 22, VIEW_H - 26);
   bar(ctx, 70, VIEW_H - 31, 138, 9, p.torchFuel / PLAYER.torchFuelMax, '#ffb454');
+
+  if (p.armour && p.armour !== 'none') {
+    const a = p.armourDef;
+    ctx.font = `800 9px ${FONT}`;
+    ctx.fillStyle = a.rank > 1 ? '#c3ccdd' : '#ded3c0';
+    ctx.fillText(`${a.label.toUpperCase()} ARMOUR  -${Math.round(a.reduce * 100)}%`, 22, VIEW_H - 12);
+  }
 
   // ---- weapons ----------------------------------------------------------
   const slotW = 62, gap = 5;

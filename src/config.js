@@ -43,20 +43,31 @@ export const BUILDINGS = {
 
 // --- resources -----------------------------------------------------------
 export const RESOURCES = {
-  scrap:   { label: 'Scrap',   colour: '#9fb2d6' },
-  wood:    { label: 'Wood',    colour: '#c98b4b' },
-  iron:    { label: 'Iron',    colour: '#e0e6f2' },
-  crystal: { label: 'Crystal', colour: '#38e1ff' },
-  fuel:    { label: 'Fuel',    colour: '#ffb454' },
-  dough:   { label: 'Dough',   colour: '#f2d9a8' },
-  cheese:  { label: 'Cheese',  colour: '#ffd93d' },
+  scrap:     { label: 'Scrap',   colour: '#9fb2d6' },
+  wood:      { label: 'Wood',    colour: '#c98b4b' },
+  iron:      { label: 'Iron',    colour: '#e0e6f2' },
+  crystal:   { label: 'Crystal', colour: '#38e1ff' },
+  fuel:      { label: 'Fuel',    colour: '#ffb454' },
+  dough:     { label: 'Dough',   colour: '#f2d9a8' },
+  cheese:    { label: 'Cheese',  colour: '#ffd93d' },
+  // Neither of these is ever lying on the floor. Gunpowder is what's left when
+  // a ghost and a vampire go out together; laser beams are bottled crystal.
+  gunpowder: { label: 'Powder',  colour: '#a89ab0' },
+  laserbeam: { label: 'Beams',   colour: '#7ef0ff' },
+  // trophies — these only ever come off a monster
+  battery:   { label: 'Battery', colour: '#5ad1a8', trophy: true },
+  fang:      { label: 'Fangs',   colour: '#f2e6d8', trophy: true },
+  bone:      { label: 'Bones',   colour: '#ded3c0', trophy: true },
+  plating:   { label: 'Plating', colour: '#c3ccdd', trophy: true },
 };
 
-// how often each resource shows up as a pellet on the floor
-export const PELLET_MIX = [
-  ['scrap', 30], ['wood', 24], ['iron', 12], ['fuel', 12],
-  ['dough', 9], ['cheese', 9], ['crystal', 4],
-];
+// The seven you find lying about are gatherable; everything else is earned.
+export const GATHERABLE = ['scrap', 'wood', 'iron', 'crystal', 'fuel', 'dough', 'cheese'];
+
+// Kill a ghost and a vampire inside this window and the two deaths leave
+// gunpowder behind. It is the only source there is.
+export const GUNPOWDER_WINDOW = 2.5;
+export const GUNPOWDER_PER_DOUBLE = 2;
 
 // --- monsters ------------------------------------------------------------
 export const M_GHOST = 'ghost';
@@ -94,6 +105,28 @@ export const MONSTERS = {
     scoreValue: 45,
   },
 };
+
+// What each monster leaves behind. `chance` makes a drop a rare one; without
+// it the drop is certain. Iron plating off a zombie is the rarest thing in the
+// game and the only route to the best armour.
+export const DROPS = {
+  [M_GHOST]:   [{ res: 'crystal', n: 2 }, { res: 'battery', n: 1 }],
+  [M_VAMPIRE]: [{ res: 'fuel', n: 2 }, { res: 'fang', n: 1 }],
+  [M_ZOMBIE]:  [{ res: 'iron', n: 4 }, { res: 'bone', n: 2 }, { res: 'plating', n: 1, chance: 0.05 }],
+};
+
+// Armour soaks a share of every hit and adds a little headroom on top.
+export const ARMOUR = {
+  none: { rank: 0, reduce: 0,    bonusHp: 0,  label: 'None' },
+  bone: { rank: 1, reduce: 0.22, bonusHp: 15, label: 'Bone' },
+  iron: { rank: 2, reduce: 0.42, bonusHp: 35, label: 'Iron' },
+};
+
+// how often each resource shows up as a pellet on the floor
+export const PELLET_MIX = [
+  ['scrap', 30], ['wood', 24], ['iron', 12], ['fuel', 12],
+  ['dough', 9], ['cheese', 9], ['crystal', 4],
+];
 
 // --- weapons -------------------------------------------------------------
 // dmg tables are multipliers per monster type. This is the heart of the game:
@@ -134,6 +167,13 @@ export const WEAPONS = {
     vs: { ghost: 1.0, vampire: 0.6, zombie: 0.5 },
     blurb: 'Coherent light. The only thing a ghost can actually feel.',
   },
+  lasergun: {
+    key: 'lasergun', name: 'Laser Gun', short: 'L-GUN', slot: 7, kind: 'beam',
+    damage: 210, cooldown: 0.5, colour: '#7ef0ff',
+    ammo: 'cells', beamLength: 14, beamTime: 0.15, beamLight: 9,
+    vs: { ghost: 1.0, vampire: 0.9, zombie: 0.85 },
+    blurb: 'Bottled light with a powder charge behind it. The one thing that hurts all three.',
+  },
   pizza: {
     key: 'pizza', name: 'Garlic Pizza', short: 'PIZZA', slot: 6, kind: 'throw',
     damage: 70, cooldown: 0.7, speed: 300, colour: '#ffd93d',
@@ -143,7 +183,7 @@ export const WEAPONS = {
   },
 };
 
-export const WEAPON_ORDER = ['torch', 'sword', 'bow', 'gun', 'laser', 'pizza'];
+export const WEAPON_ORDER = ['torch', 'sword', 'bow', 'gun', 'laser', 'pizza', 'lasergun'];
 
 // --- crafting ------------------------------------------------------------
 // benchOnly recipes need you stood next to a workbench.
@@ -155,9 +195,14 @@ export const RECIPES = [
   { id: 'arrows',  label: 'Arrows  x8',       cost: { wood: 3 },                       give: { arrows: 8 } },
   { id: 'bullets', label: 'Bullets x12',      cost: { iron: 3, scrap: 2 },             give: { bullets: 12 }, benchOnly: true },
   { id: 'cells',   label: 'Cells   x4',       cost: { crystal: 3 },                    give: { cells: 4 },    benchOnly: true },
+  { id: 'cellbat', label: 'Cells   x6',       cost: { battery: 1 },                    give: { cells: 6 },    benchOnly: true },
   { id: 'pizzas',  label: 'Pizza   x3',       cost: { dough: 3, cheese: 3 },           give: { pizzas: 3 } },
   { id: 'medkit',  label: 'Patch up (+40hp)', cost: { dough: 2, cheese: 1, scrap: 2 }, heal: 40 },
   { id: 'flare',   label: 'Flare',            cost: { fuel: 3, crystal: 1 },           give: { flares: 1 } },
+  { id: 'beams',   label: 'Laser Beams x2',   cost: { crystal: 2, fuel: 1 },           give: { laserbeam: 2 }, benchOnly: true },
+  { id: 'lasergun', label: 'Laser Gun',       cost: { laserbeam: 3, iron: 6, gunpowder: 2 }, unlock: 'lasergun', benchOnly: true },
+  { id: 'bonearmour', label: 'Bone Armour',   cost: { bone: 6, fang: 2 },              armour: 'bone', benchOnly: true },
+  { id: 'ironarmour', label: 'Iron Armour',   cost: { plating: 1, iron: 4 },           armour: 'iron', benchOnly: true },
   // vehicle parts
   { id: 'frame',   label: 'Chassis',          cost: { iron: 14, scrap: 16 }, part: 'frame',  benchOnly: true },
   { id: 'engine',  label: 'Engine',           cost: { iron: 12, crystal: 5 }, part: 'engine', benchOnly: true },

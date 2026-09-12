@@ -1,5 +1,6 @@
 import {
-  PLAYER, WEAPONS, WEAPON_ORDER, BUILDINGS, B_WALL, B_TORCH, B_BENCH, B_TURRET,
+  PLAYER, WEAPONS, WEAPON_ORDER, BUILDINGS, RESOURCES, ARMOUR,
+  B_WALL, B_TORCH, B_BENCH, B_TURRET,
 } from './config.js';
 import { gridMove } from './movement.js';
 import { toCell, tileCentre } from './world.js';
@@ -18,12 +19,13 @@ export class Player {
     this.radius = PLAYER.radius;
     this.phasing = false;
 
+    this.armour = 'none';
     this.hp = PLAYER.maxHp;
     this.maxHp = PLAYER.maxHp;
     this.invuln = 0;
     this.hurtFlash = 0;
 
-    this.res = { scrap: 0, wood: 0, iron: 0, crystal: 0, fuel: 0, dough: 0, cheese: 0 };
+    this.res = Object.fromEntries(Object.keys(RESOURCES).map((k) => [k, 0]));
     this.ammo = { arrows: 12, bullets: 0, cells: 0, pizzas: 0, flares: 0 };
     this.unlocked = new Set(['torch']);
     this.parts = new Set();
@@ -124,9 +126,24 @@ export class Player {
     for (const [k, v] of Object.entries(cost)) this.res[k] -= v;
   }
 
+  get armourDef() { return ARMOUR[this.armour] || ARMOUR.none; }
+
+  /** Returns false if it would be a downgrade — armour never gets worse. */
+  equipArmour(kind) {
+    const next = ARMOUR[kind];
+    if (!next || next.rank <= this.armourDef.rank) return false;
+    const headroom = next.bonusHp - this.armourDef.bonusHp;
+    this.armour = kind;
+    this.maxHp = PLAYER.maxHp + next.bonusHp;
+    this.hp = Math.min(this.maxHp, this.hp + headroom);
+    return true;
+  }
+
   hurt(amount) {
     if (this.invuln > 0) return false;
-    this.hp = Math.max(0, this.hp - amount);
+    const taken = Math.max(1, Math.round(amount * (1 - this.armourDef.reduce)));
+    this.hp = Math.max(0, this.hp - taken);
+    this.lastHit = taken;
     this.invuln = PLAYER.invulnAfterHit;
     this.hurtFlash = 0.35;
     return true;
