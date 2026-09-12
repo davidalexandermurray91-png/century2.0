@@ -8,7 +8,8 @@
 
 import * as THREE from 'three';
 import { VoxelWorld, SX, SY, SZ, CHUNK, CHUNKS_X, CHUNKS_Z, inside } from './voxel.js';
-import { AIR, BLOCKS, HOTBAR, costOf, hasCost, rgb } from './blocks.js';
+import { AIR, BLOCKS, HOTBAR, costOf, hasCost, tileFor } from './blocks.js';
+import { buildAtlasCanvas, TILE_PX, ATLAS_TILES } from './textures.js';
 import { saveWorld, isOwner, canBuild } from '../worlds.js';
 import { canAfford, spend, refund, saveProfile } from '../profile.js';
 import { sfx } from '../audio.js';
@@ -78,13 +79,30 @@ export class Builder {
     this.renderer.domElement.className = 'b3d-canvas';
     this.mount.appendChild(this.renderer.domElement);
 
-    this.sun = new THREE.DirectionalLight(0xffffff, 1.6);
+    // Deliberately flat lighting. Each face already carries a baked shade in
+    // its vertex colour, so a strong directional sun only makes half the world
+    // unreadable; the ambient sky light does the work and the sun is a hint.
+    this.sun = new THREE.DirectionalLight(0xffffff, 0.4);
     this.scene.add(this.sun);
-    this.hemi = new THREE.HemisphereLight(0xbfd9ff, 0x4a4130, 0.75);
+    this.hemi = new THREE.HemisphereLight(0xcfe4ff, 0x53482f, 1.1);
     this.scene.add(this.hemi);
 
-    this.litMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
-    this.glowMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
+    // One atlas, painted once, sampled with nearest-neighbour so the pixels
+    // stay square however close you get.
+    this.atlasCanvas = buildAtlasCanvas();
+    this.atlas = new THREE.CanvasTexture(this.atlasCanvas);
+    this.atlas.magFilter = THREE.NearestFilter;
+    this.atlas.minFilter = THREE.NearestMipmapNearestFilter;
+    this.atlas.generateMipmaps = true;
+    this.atlas.colorSpace = THREE.SRGBColorSpace;
+
+    this.litMaterial = new THREE.MeshLambertMaterial({ map: this.atlas, vertexColors: true });
+    // leaves and glass punch holes rather than blend, which keeps them out of
+    // the transparency sort entirely
+    this.cutoutMaterial = new THREE.MeshLambertMaterial({
+      map: this.atlas, vertexColors: true, alphaTest: 0.5,
+    });
+    this.glowMaterial = new THREE.MeshBasicMaterial({ map: this.atlas, vertexColors: true });
 
     // the block you're pointing at
     const box = new THREE.BoxGeometry(1.002, 1.002, 1.002);
@@ -195,7 +213,7 @@ export class Builder {
       slot.className = 'b3d-slot' + (i === this.hotbarIndex ? ' on' : '');
       const affordable = this.creative || canAfford(this.profile, costOf(id));
       slot.innerHTML = `
-        <span class="b3d-swatch" style="background:${def.colour}"></span>
+        <span class="b3d-swatch" style="background-image:url(${this.blockIcon(id)});background-color:${def.colour}"></span>
         <span class="b3d-sname">${def.name}</span>
         <span class="b3d-scost">${this.creative || !hasCost(id) ? 'free' : costLabel(id)}</span>`;
       slot.dataset.key = String((i + 1) % 10);
@@ -203,6 +221,24 @@ export class Builder {
       slot.addEventListener('click', () => { this.hotbarIndex = i; this.renderHotbar(); });
       bar.appendChild(slot);
     });
+  }
+
+  /** A scaled-up crop of the atlas, for the hotbar. Cached per block. */
+  blockIcon(id) {
+    this.iconCache = this.iconCache || new Map();
+    if (this.iconCache.has(id)) return this.iconCache.get(id);
+    const size = 32;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    const slot = tileFor(id, 0);                       // the side face reads best
+    const sx = (slot % ATLAS_TILES) * TILE_PX;
+    const sy = Math.floor(slot / ATLAS_TILES) * TILE_PX;
+    g.drawImage(this.atlasCanvas, sx, sy, TILE_PX, TILE_PX, 0, 0, size, size);
+    const url = c.toDataURL();
+    this.iconCache.set(id, url);
+    return url;
   }
 
   renderAdmin() {
@@ -611,8 +647,8 @@ export class Builder {
     const angle = t * Math.PI * 2 - Math.PI / 2;
     this.sun.position.set(Math.cos(angle) * 100, Math.sin(angle) * 100, 40);
     const day = Math.max(0, Math.sin(t * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5);
-    this.sun.intensity = 0.25 + day * 1.5;
-    this.hemi.intensity = 0.18 + day * 0.7;
+    this.sun.intensity = 0.08 + day * 0.42;
+    this.hemi.intensity = 0.3 + day * 1.05;
     const sky = new THREE.Color(0x05070f).lerp(new THREE.Color(0x9fc6e8), day);
     this.scene.background = sky;
     this.scene.fog.color = sky;
@@ -631,19 +667,19 @@ export class Builder {
       const built = this.voxels.buildChunk(cx, cz);
       const old = this.chunkMeshes.get(key);
       if (old) {
-        this.scene.remove(old.lit);
-        this.scene.remove(old.glow);
-        old.lit.geometry.dispose(); old.glow.geometry.dispose();
+        for (const m of old.all) { this.scene.remove(m); m.geometry.dispose(); }
       }
-      // an empty chunk still needs an entry so the next edit can replace it,
-      // but there is no sense handing the renderer geometry with no vertices
-      const lit = new THREE.Mesh(built.lit, this.litMaterial);
-      const glow = new THREE.Mesh(built.glow, this.glowMaterial);
-      lit.visible = !!built.lit.getAttribute('position');
-      glow.visible = !!built.glow.getAttribute('position');
-      if (lit.visible) this.scene.add(lit);
-      if (glow.visible) this.scene.add(glow);
-      this.chunkMeshes.set(key, { lit, glow });
+      // an empty bucket is simply not added — there is no sense handing the
+      // renderer geometry with no vertices in it
+      const made = [
+        new THREE.Mesh(built.lit, this.litMaterial),
+        new THREE.Mesh(built.cutout, this.cutoutMaterial),
+        new THREE.Mesh(built.glow, this.glowMaterial),
+      ];
+      for (const m of made) {
+        if (m.geometry.getAttribute('position')) this.scene.add(m);
+      }
+      this.chunkMeshes.set(key, { all: made });
       done++;
     }
   }
@@ -732,12 +768,14 @@ export class Builder {
     for (const d of this.disposers) d();
     this.disposers = [];
     this.clearMonsters();
-    for (const { lit, glow } of this.chunkMeshes.values()) {
-      lit.geometry.dispose(); glow.geometry.dispose();
+    for (const { all } of this.chunkMeshes.values()) {
+      for (const m of all) m.geometry.dispose();
     }
     this.chunkMeshes.clear();
     this.litMaterial.dispose();
+    this.cutoutMaterial.dispose();
     this.glowMaterial.dispose();
+    this.atlas.dispose();
     this.renderer.dispose();
     this.mount.innerHTML = '';
   }

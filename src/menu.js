@@ -5,11 +5,13 @@ import { RESOURCES } from './config.js';
 import { listWorlds, createWorld, deleteWorld, exportWorld, importWorld, isOwner } from './worlds.js';
 
 export class Menu {
-  constructor({ mount, profile, onSurvival, onWorld }) {
+  constructor({ mount, profile, account, onSurvival, onWorld, onSignOut }) {
     this.mount = mount;
     this.profile = profile;
+    this.account = account;
     this.onSurvival = onSurvival;
     this.onWorld = onWorld;
+    this.onSignOut = onSignOut;
   }
 
   show() {
@@ -23,7 +25,13 @@ export class Menu {
     const worlds = listWorlds();
     this.mount.innerHTML = `
       <div class="menu-inner">
+        <div class="acct-bar">
+          <span>Signed in as <b>${escapeHtml(this.account.name)}</b></span>
+          <button data-act="signout" class="ghost">Switch account</button>
+        </div>
+
         <header class="menu-head">
+          <p class="presents">Alexander J. Murray presents</p>
           <h1>CENTURY</h1>
           <p class="tag">Survive one hundred nights &middot; then go build something</p>
         </header>
@@ -104,6 +112,7 @@ export class Menu {
     const act = btn.dataset.act;
     const id = btn.dataset.id;
 
+    if (act === 'signout') return this.onSignOut();
     if (act === 'survival') return this.onSurvival();
     if (act === 'play') return this.onWorld(id);
 

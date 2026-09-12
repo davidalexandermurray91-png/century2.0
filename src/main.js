@@ -5,11 +5,16 @@ import { VIEW_W, VIEW_H, RESOURCES } from './config.js';
 import { ordinal } from './utils.js';
 import { loadProfile } from './profile.js';
 import { Menu } from './menu.js';
+import { SignIn } from './signin.js';
+import { currentAccount, signOut } from './accounts.js';
 import { getWorld } from './worlds.js';
 
-const profile = loadProfile();
+let account = null;
+let profile = null;
+let menu = null;
 
 const screens = {
+  accounts: document.getElementById('accounts'),
   menu: document.getElementById('menu'),
   survival: document.getElementById('survival'),
   world: document.getElementById('world3d'),
@@ -35,14 +40,38 @@ function show(which) {
   for (const [name, el] of Object.entries(screens)) el.hidden = name !== which;
 }
 
-// ------------------------------------------------------------------- menu ---
-const menu = new Menu({
-  mount: screens.menu,
-  profile,
-  onSurvival: () => openSurvival(),
-  onWorld: (id) => openWorld(id),
+// --------------------------------------------------------------- accounts ---
+const signin = new SignIn({
+  mount: screens.accounts,
+  onSignedIn: (acc) => enter(acc),
 });
 
+/** Sign in and build everything that depends on who is playing. */
+function enter(acc) {
+  account = acc;
+  profile = loadProfile(acc);
+  menu = new Menu({
+    mount: screens.menu,
+    profile,
+    account,
+    onSurvival: () => openSurvival(),
+    onWorld: (id) => openWorld(id),
+    onSignOut: () => leave(),
+  });
+  backToMenu();
+}
+
+function leave() {
+  running = false;
+  if (builder) { builder.stop(); builder = null; }
+  game = null;
+  signOut();
+  account = null; profile = null; menu = null;
+  show('accounts');
+  signin.render();
+}
+
+// ------------------------------------------------------------------- menu ---
 function backToMenu() {
   running = false;
   if (builder) { builder.stop(); builder = null; }
@@ -170,5 +199,6 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
-show('menu');
-menu.render();
+const resumed = currentAccount();
+if (resumed) enter(resumed);
+else { show('accounts'); signin.render(); }

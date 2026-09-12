@@ -47,6 +47,23 @@ around than fifteen.
 | `C` | field notes on the three monsters |
 | `M` | sound on/off |
 
+## Accounts
+
+The first screen asks who's playing. An account keeps your bank, your worlds
+and your admin rights together, and keeps two people on one device apart. It is
+also the identity a world is stamped with, so **only the person who made a
+world gets the admin panel for it**.
+
+Be clear about what it is: there is no server, no password, and no login. An
+account is a named profile in this browser, and anyone using this browser can
+sign into any of them. It is separation, not protection, and clearing site data
+clears it.
+
+**Back up** gives you a code carrying the account, its bank and every world it
+owns. Pasting that into **Restore from backup** on another browser or device
+brings the lot across. That is how progress actually travels — restoring the
+same code twice is safe and won't duplicate anything.
+
 ## The two halves
 
 ### Survival — the 2D game
@@ -56,7 +73,10 @@ makes them worth playing. Everything you are carrying when the run ends gets
 **banked**.
 
 ### World mode — your own 3D world
-A voxel island, first person, that you own. Being the owner is what gives you
+A voxel island, first person, that you own, in the blocky 16-pixel style. Every
+texture is painted in code at load time (`src/builder/textures.js`) rather than
+shipped as image files — original art in that style, nothing copied — which is
+why the whole game is still one page with no assets. Being the owner is what gives you
 the **admin panel**: creative rules by default (free blocks, flight, nothing
 can hurt you), plus control of the clock, the monsters, and whether visitors
 may build. Flip a world to **survival rules** and blocks start costing real
@@ -161,10 +181,12 @@ index.html          shell, title card
 style.css           page chrome around the canvas
 src/config.js       every tunable: monsters, weapons, drops, armour, recipes
 src/game.js         the loop — clock, waves, combat, crafting, evacuation
-src/profile.js      the one save that spans both halves
+src/profile.js      the bank, one per account
+src/accounts.js     local accounts, backup and restore
+src/signin.js       the who's-playing screen
 src/worlds.js       world records, ownership, export and import
 src/menu.js         the front door
-src/builder/        world mode: blocks.js, voxel.js, builder.js
+src/builder/        world mode: blocks.js, textures.js, voxel.js, builder.js
 vendor/             three.js r180, committed so world mode works offline
 src/world.js        maze generation, pellets, buildings, light and flow fields
 src/monsters.js     the three of them, and how they think
@@ -181,8 +203,11 @@ src/main.js         bootstrap and the frame loop
 
 Damage multipliers, monster stats, drop tables, armour values, recipes, wave
 composition and the day/night curve all live in `src/config.js` — that's the
-file to open to rebalance anything. Block types and their costs live in
-`src/builder/blocks.js`.
+file to open to rebalance anything.
+
+Block types, their costs and which atlas tile each face uses live in
+`src/builder/blocks.js`; the tiles themselves are painted in
+`src/builder/textures.js`.
 
 World mode loads three.js only when you open a world, so the 2D game costs
 nothing if you never do. The library is committed under `vendor/` rather than

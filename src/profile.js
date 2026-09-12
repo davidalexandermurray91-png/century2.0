@@ -8,12 +8,14 @@
 import { RESOURCES } from './config.js';
 
 const KEY = 'century.profile.v1';
+const keyFor = (accountId) => `${KEY}:${accountId}`;
 
 const blankRes = () => Object.fromEntries(Object.keys(RESOURCES).map((k) => [k, 0]));
 
-export function blankProfile() {
+export function blankProfile(account = null) {
   return {
-    ownerId: newOwnerId(),
+    accountId: account?.id || null,
+    ownerId: account?.ownerId || newOwnerId(),
     res: blankRes(),
     unlocked: ['torch'],
     bestNight: 0,
@@ -29,28 +31,32 @@ function newOwnerId() {
   return `own_${r()}${r()}`;
 }
 
-export function loadProfile() {
+export function loadProfile(account) {
   let raw = null;
-  try { raw = localStorage.getItem(KEY); } catch { /* storage unavailable */ }
-  if (!raw) return blankProfile();
+  try { raw = localStorage.getItem(keyFor(account.id)); } catch { /* storage unavailable */ }
+  if (!raw) return blankProfile(account);
   try {
     const p = JSON.parse(raw);
-    const base = blankProfile();
+    const base = blankProfile(account);
     return {
       ...base,
       ...p,
-      ownerId: p.ownerId || base.ownerId,
+      accountId: account.id,
+      // the account is the authority on identity, not the stored copy
+      ownerId: account.ownerId,
       // a profile saved before a resource existed must not come back undefined
       res: { ...base.res, ...(p.res || {}) },
       unlocked: Array.isArray(p.unlocked) && p.unlocked.length ? p.unlocked : base.unlocked,
     };
   } catch {
-    return blankProfile();
+    return blankProfile(account);
   }
 }
 
 export function saveProfile(profile) {
-  try { localStorage.setItem(KEY, JSON.stringify(profile)); return true; } catch { return false; }
+  if (!profile?.accountId) return false;
+  try { localStorage.setItem(keyFor(profile.accountId), JSON.stringify(profile)); return true; }
+  catch { return false; }
 }
 
 /** Fold what a finished run gathered into the bank. Returns what was added. */

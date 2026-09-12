@@ -5,7 +5,8 @@
 // not a seed someone else's machine has to agree about.
 
 import * as THREE from 'three';
-import { AIR, BLOCKS, isOpaque, rgb } from './blocks.js';
+import { AIR, BLOCKS, isOpaque, tileFor, rgb } from './blocks.js';
+import { tileUv } from './textures.js';
 import { mulberry32 } from '../utils.js';
 
 export const SX = 64, SY = 48, SZ = 64;
@@ -17,13 +18,16 @@ export const inside = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < SX && y < S
 const index = (x, y, z) => (y * SZ + z) * SX + x;
 
 // face order: +x, -x, +y, -y, +z, -z
+const SIDE_UV = [[0, 0], [0, 1], [1, 1], [1, 0]];
+const FLAT_UV = [[0, 0], [1, 0], [1, 1], [0, 1]];
+
 const FACES = [
-  { dir: [1, 0, 0],  shade: 0.82, corners: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
-  { dir: [-1, 0, 0], shade: 0.72, corners: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
-  { dir: [0, 1, 0],  shade: 1.00, corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]] },
-  { dir: [0, -1, 0], shade: 0.55, corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]] },
-  { dir: [0, 0, 1],  shade: 0.90, corners: [[1,0,1],[1,1,1],[0,1,1],[0,0,1]] },
-  { dir: [0, 0, -1], shade: 0.66, corners: [[0,0,0],[0,1,0],[1,1,0],[1,0,0]] },
+  { dir: [1, 0, 0],  shade: 0.82, corners: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]], uv: SIDE_UV },
+  { dir: [-1, 0, 0], shade: 0.72, corners: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]], uv: SIDE_UV },
+  { dir: [0, 1, 0],  shade: 1.00, corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]], uv: FLAT_UV },
+  { dir: [0, -1, 0], shade: 0.55, corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]], uv: FLAT_UV },
+  { dir: [0, 0, 1],  shade: 0.90, corners: [[1,0,1],[1,1,1],[0,1,1],[0,0,1]], uv: SIDE_UV },
+  { dir: [0, 0, -1], shade: 0.66, corners: [[0,0,0],[0,1,0],[1,1,0],[1,0,0]], uv: SIDE_UV },
 ];
 
 export class VoxelWorld {
@@ -150,8 +154,10 @@ export class VoxelWorld {
    * is what keeps a 200k-cell world drawable.
    */
   buildChunk(cx, cz) {
-    const lit = { pos: [], norm: [], col: [], idx: [] };
-    const glow = { pos: [], norm: [], col: [], idx: [] };
+    const bucket = () => ({ pos: [], norm: [], col: [], uv: [], idx: [] });
+    const lit = bucket();      // ordinary blocks, take the light
+    const cutout = bucket();   // leaves and glass, alpha-tested
+    const glow = bucket();     // emissive blocks, full bright
     const x0 = cx * CHUNK, z0 = cz * CHUNK;
 
     for (let x = x0; x < x0 + CHUNK; x++) {
@@ -161,7 +167,7 @@ export class VoxelWorld {
           if (id === AIR) continue;
           const def = BLOCKS[id];
           if (!def) continue;
-          const target = def.emissive ? glow : lit;
+          const target = def.emissive ? glow : (def.cutout ? cutout : lit);
 
           for (const face of FACES) {
             const nx = x + face.dir[0], ny = y + face.dir[1], nz = z + face.dir[2];
@@ -169,23 +175,27 @@ export class VoxelWorld {
             // a transparent block still hides the face of another of its own kind
             if (isOpaque(neighbour) || (neighbour === id && def.transparent)) continue;
 
-            const base = face.dir[1] === 1 && def.top ? rgb(def.top) : rgb(def.colour);
-            // A touch of per-block variation. Without it a wide flat field of
-            // one block type reads as a blank plate rather than a surface.
-            const jitter = def.emissive ? 1 : 0.93 + hash3(x, y, z) * 0.14;
+            // The texture carries the detail now; the vertex colour only
+            // shades by face direction, with a whisper of per-block variation
+            // so large flat runs don't look stamped.
+            const jitter = def.emissive ? 1 : 0.96 + hash3(x, y, z) * 0.08;
             const k = (def.emissive ? 1 : face.shade) * jitter;
+            const uvw = tileUv(tileFor(id, face.dir[1]));
             const start = target.pos.length / 3;
-            for (const c of face.corners) {
+            for (let i = 0; i < 4; i++) {
+              const c = face.corners[i];
               target.pos.push(x + c[0], y + c[1], z + c[2]);
               target.norm.push(face.dir[0], face.dir[1], face.dir[2]);
-              target.col.push(base[0] * k, base[1] * k, base[2] * k);
+              target.col.push(k, k, k);
+              const [lu, lv] = face.uv[i];
+              target.uv.push(uvw.u0 + (uvw.u1 - uvw.u0) * lu, uvw.v0 + (uvw.v1 - uvw.v0) * lv);
             }
             target.idx.push(start, start + 1, start + 2, start, start + 2, start + 3);
           }
         }
       }
     }
-    return { lit: toGeometry(lit), glow: toGeometry(glow) };
+    return { lit: toGeometry(lit), cutout: toGeometry(cutout), glow: toGeometry(glow) };
   }
 
   // -------------------------------------------------------------- raycast ---
@@ -279,6 +289,7 @@ function toGeometry(b) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(b.norm, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
   g.setIndex(b.idx);
   return g;
 }
