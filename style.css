@@ -50,7 +50,7 @@ h2{margin:.2rem 0;font-size:clamp(1.4rem,4vw,2.2rem);letter-spacing:.2em}
 .tag{margin:.1rem 0 1rem;color:var(--dim);letter-spacing:.16em;text-transform:uppercase;font-size:.78rem}
 .brief{list-style:none;margin:0 0 1rem;padding:0;max-width:46ch;text-align:left;font-size:.92rem;line-height:1.7;color:#b9c6e6}
 .brief li{padding-left:1.1em;position:relative}
-.brief li::before{content:"›";position:absolute;left:0;color:var(--cyan)}
+.brief li::before{content:"\203A";position:absolute;left:0;color:var(--cyan)}
 .brief b{color:#fff}
 .keys{color:var(--dim);font-size:.78rem;margin:.2rem 0 1.2rem;line-height:2}
 kbd{
